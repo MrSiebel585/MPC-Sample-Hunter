@@ -1,0 +1,35 @@
+_mpc_crate_complete() {
+  local cur prev commands folders workflows packs
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  commands="menu status today find search scan stats import process process-new convert clean bpm organize audition play slice chop pack kit quick-pack preview export prepare-sd sync-sd open workflow choose doctor config commands help legal backend"
+  folders="root raw wav slices packs exports reports catalog sd"
+  workflows="new-pack drum-kit loop-pack sd-export"
+  packs="$(find "$HOME/Music/MPC_Sample_Hunter/packs" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)"
+
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return 0
+  fi
+
+  case "$prev" in
+    open)
+      COMPREPLY=( $(compgen -W "$folders" -- "$cur") )
+      ;;
+    workflow)
+      COMPREPLY=( $(compgen -W "$workflows" -- "$cur") )
+      ;;
+    preview|export|prepare-sd|pack|kit)
+      COMPREPLY=( $(compgen -W "$packs" -- "$cur") )
+      ;;
+    help)
+      COMPREPLY=( $(compgen -W "$commands slice chop pack export workflow open scan find search" -- "$cur") )
+      ;;
+    *)
+      COMPREPLY=()
+      ;;
+  esac
+}
+complete -F _mpc_crate_complete mpc-crate

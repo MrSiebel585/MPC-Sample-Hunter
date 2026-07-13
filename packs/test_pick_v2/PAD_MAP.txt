@@ -1,0 +1,45 @@
+MPC Pad Map
+Created: Mon Jul 13 13:36:06 EDT 2026
+Pack: /home/jeremy/Music/MPC_Sample_Hunter/packs/test_pick_v2
+
+Bank A - Drums
+A01 - slice_03n002.wav                                        0.34s
+      drums/slice_03n002.wav
+A02 - slice_03n012.wav                                        3.89s
+      drums/slice_03n012.wav
+A03 - slice_03n020.wav                                        0.16s
+      drums/slice_03n020.wav
+A04 - slice_03n022.wav                                        0.15s
+      drums/slice_03n022.wav
+A05 - slice_03n028.wav                                        7.52s
+      drums/slice_03n028.wav
+A06 - slice_03n031.wav                                        3.78s
+      drums/slice_03n031.wav
+A07 - slice_03n036.wav                                        0.29s
+      drums/slice_03n036.wav
+A08 - slice_03n037.wav                                        0.26s
+      drums/slice_03n037.wav
+A09 - slice_03n042.wav                                        0.20s
+      drums/slice_03n042.wav
+A10 - slice_03n045.wav                                        0.35s
+      drums/slice_03n045.wav
+A11 - slice_03n046.wav                                        0.20s
+      drums/slice_03n046.wav
+A12 - slice_03n047.wav                                        0.36s
+      drums/slice_03n047.wav
+A13 - slice_03n051.wav                                        6.82s
+      drums/slice_03n051.wav
+A14 - slice_03n054.wav                                        3.30s
+      drums/slice_03n054.wav
+A15 - slice_03n056.wav                                        4.46s
+      drums/slice_03n056.wav
+A16 - slice_03n059.wav                                        4.20s
+      drums/slice_03n059.wav
+
+Bank B - Percussion / Bass
+
+Bank C - Melodic / Loops
+
+Bank D - Chops / Vocals / FX / Other
+
+Overflow

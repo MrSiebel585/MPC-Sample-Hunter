@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REAL_MPC_SAMPLE_HUNTER="${REAL_MPC_SAMPLE_HUNTER:-/usr/local/bin/mpc-sample-hunter}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+if [ -x "$SCRIPT_DIR/mpc-crate" ]; then
+  DEFAULT_MPC_CRATE_BIN="$SCRIPT_DIR/mpc-crate"
+else
+  DEFAULT_MPC_CRATE_BIN="mpc-crate"
+fi
+MPC_CRATE_BIN="${MPC_CRATE_BIN:-$DEFAULT_MPC_CRATE_BIN}"
+
+cmd="${1:-help}"
+
+case "$cmd" in
+  menu|status|today|find|scan|stats|search|catalog-scan|catalog-stats|catalog-search|browse|browser|choose|import|add|process|process-new|clean|bpm|bpm-missing|fill-bpm|organize|audition|play|slice|chop|reslice|guarded-slice|pack|kit|quick-pack|pad-map|preview|export|export-mpc|flatten-pack|zip-pack|prepare-sd|sync-sd|sd-sync|rsync-sd|workflow|open|folders|config|commands)
+    exec "$MPC_CRATE_BIN" "$@"
+    ;;
+  *)
+    exec "$REAL_MPC_SAMPLE_HUNTER" "$@"
+    ;;
+esac

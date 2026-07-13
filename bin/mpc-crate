@@ -1,0 +1,2526 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${MPC_SAMPLE_ROOT:-$HOME/Music/MPC_Sample_Hunter}"
+RAW="$ROOT/raw"
+WAV="$ROOT/wav"
+SLICES="$ROOT/slices"
+PACKS="$ROOT/packs"
+EXPORTS="$ROOT/exports"
+PREVIEWS="$ROOT/previews"
+REPORTS="$ROOT/reports"
+LOGS="$ROOT/logs"
+TMP="$ROOT/tmp"
+CATALOG_DIR="${MPC_CRATE_CATALOG_DIR:-$ROOT/catalog}"
+CATALOG_FILE="${MPC_CRATE_CATALOG_FILE:-$CATALOG_DIR/samples.tsv}"
+MPC_SAMPLE_HUNTER_BIN="${MPC_SAMPLE_HUNTER_BIN:-/usr/local/bin/mpc-sample-hunter}"
+SD_TARGET="${MPC_SD_TARGET:-/media/jeremy/MPC_SD_MAST}"
+SD_SOURCE="${MPC_SD_SOURCE:-$EXPORTS}"
+SD_REQUIRE_MOUNT="${MPC_SD_REQUIRE_MOUNT:-1}"
+BPM_REPORT=""
+
+stamp() {
+  date +"%Y%m%d-%H%M%S"
+}
+
+die() {
+  echo "Could not continue: $*" >&2
+  exit 1
+}
+
+run_backend() {
+  "$MPC_SAMPLE_HUNTER_BIN" "$@"
+}
+
+safe_name() {
+  echo "$*" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/_/g; s/__*/_/g; s/^_//; s/_$//'
+}
+
+format_int() {
+  awk -v n="${1:-0}" 'BEGIN {
+    s = sprintf("%d", n)
+    out = ""
+    while (length(s) > 3) {
+      out = "," substr(s, length(s) - 2) out
+      s = substr(s, 1, length(s) - 3)
+    }
+    print s out
+  }'
+}
+
+expand_path() {
+  local path="${1:-}"
+  case "$path" in
+    "~")
+      printf '%s\n' "$HOME"
+      ;;
+    "~/"*)
+      printf '%s\n' "$HOME/${path#~/}"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
+}
+
+audio_find_expr() {
+  printf "%s" "\( -iname '*.wav' -o -iname '*.aif' -o -iname '*.aiff' -o -iname '*.flac' -o -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.ogg' \)"
+}
+
+count_audio_files() {
+  local dir="$1"
+  [ -d "$dir" ] || {
+    echo 0
+    return
+  }
+
+  find "$dir" -type f \( \
+    -iname '*.wav' -o \
+    -iname '*.aif' -o \
+    -iname '*.aiff' -o \
+    -iname '*.flac' -o \
+    -iname '*.mp3' -o \
+    -iname '*.m4a' -o \
+    -iname '*.ogg' \
+  \) 2>/dev/null | wc -l | awk '{print $1}'
+}
+
+count_files() {
+  local dir="$1"
+  [ -d "$dir" ] || {
+    echo 0
+    return
+  }
+  find "$dir" -type f 2>/dev/null | wc -l | awk '{print $1}'
+}
+
+catalog_count() {
+  if [ ! -s "$CATALOG_FILE" ]; then
+    echo 0
+    return
+  fi
+  awk 'END {print (NR > 0 ? NR - 1 : 0)}' "$CATALOG_FILE"
+}
+
+files_needing_bpm_count() {
+  if [ ! -s "$CATALOG_FILE" ]; then
+    echo 0
+    return
+  fi
+  awk -F '\t' 'NR > 1 && $8 == "" {n++} END {print n + 0}' "$CATALOG_FILE"
+}
+
+duplicate_candidate_count() {
+  if [ ! -s "$CATALOG_FILE" ]; then
+    echo 0
+    return
+  fi
+  awk -F '\t' 'NR > 1 {seen[$2]++} END {for (f in seen) if (seen[f] > 1) n++; print n + 0}' "$CATALOG_FILE"
+}
+
+latest_pack() {
+  find "$PACKS" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null \
+    | sort -nr \
+    | awk 'NR == 1 {sub(/^[^ ]+ /, ""); print}'
+}
+
+free_disk() {
+  df -h "$ROOT" 2>/dev/null | awk 'NR == 2 {print $4}'
+}
+
+sd_is_available() {
+  [ -d "$SD_TARGET" ] || return 1
+  [ -w "$SD_TARGET" ] || return 1
+
+  if [ "$SD_REQUIRE_MOUNT" = "1" ] && command -v mountpoint >/dev/null 2>&1; then
+    mountpoint -q "$SD_TARGET" || return 1
+  fi
+
+  return 0
+}
+
+sd_status() {
+  if sd_is_available; then
+    printf 'connected at %s\n' "$SD_TARGET"
+  elif [ -d "$SD_TARGET" ]; then
+    printf 'found, but not writable/mounted: %s\n' "$SD_TARGET"
+  else
+    printf 'not connected (%s)\n' "$SD_TARGET"
+  fi
+}
+
+status_summary() {
+  local wav_count
+  local slice_count
+  local pack_count
+  local catalog_items
+  local new_waiting
+  local needs_bpm
+  local needs_review
+  local duplicate_candidates
+  local latest
+
+  wav_count="$(count_audio_files "$WAV")"
+  slice_count="$(count_audio_files "$SLICES")"
+  pack_count="$(find "$PACKS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | awk '{print $1}')"
+  catalog_items="$(catalog_count)"
+  new_waiting="$(count_audio_files "$RAW")"
+  needs_bpm="$(files_needing_bpm_count)"
+  needs_review="$(count_audio_files "$ROOT/bad_audio_review")"
+  duplicate_candidates="$(duplicate_candidate_count)"
+  latest="$(latest_pack)"
+
+  echo "MPC Crate - Ready"
+  echo
+  printf "New files waiting:       %s\n" "$(format_int "$new_waiting")"
+  printf "Files needing BPM:       %s\n" "$(format_int "$needs_bpm")"
+  printf "Files needing review:    %s\n" "$(format_int "$needs_review")"
+  printf "Duplicate candidates:    %s\n" "$(format_int "$duplicate_candidates")"
+  printf "Latest pack:             %s\n" "${latest:-none}"
+  printf "SD card:                 %s\n" "$(sd_status)"
+  echo
+  echo "Crate status:"
+  printf "  WAV files:       %s\n" "$(format_int "$wav_count")"
+  printf "  Slices:          %s\n" "$(format_int "$slice_count")"
+  printf "  Packs:           %s\n" "$(format_int "$pack_count")"
+  printf "  Catalog items:   %s\n" "$(format_int "$catalog_items")"
+  printf "  Free disk:       %s\n" "$(free_disk)"
+}
+
+short_help() {
+  cat <<'TXT'
+MPC Crate
+
+Usage:
+  mpc-crate
+  mpc-crate <command> [options]
+
+Start here:
+  menu          Guided interactive menu
+  status        Show library and SD-card status
+  find QUERY    Search your sample catalog
+  import PATH   Import audio
+  process       Clean and analyze new files
+  bpm-missing   Fill missing BPM values in the catalog
+  audition      Listen to samples
+  reslice FILE  Slice with overslice guards
+  browse        TUI catalog browser
+  pack NAME     Build a pack
+  export NAME   Export a pack to MPC
+  open NAME     Open a project folder
+  doctor        Check dependencies
+
+Help:
+  mpc-crate help COMMAND
+  mpc-crate commands
+TXT
+}
+
+commands_help() {
+  cat <<'TXT'
+MPC Crate Commands
+
+Core:
+  menu, status, today, find, search, scan, stats, choose
+
+Audio:
+  import, process, process-new, convert, clean, bpm, organize
+  bpm-missing, audition, play, slice, chop, reslice
+
+Packs:
+  pack, kit, quick-pack, pad-map, preview, export, prepare-sd
+
+Browse:
+  browse, browser, choose
+
+Workflows:
+  workflow new-pack
+  workflow drum-kit
+  workflow loop-pack
+  workflow sd-export
+
+Folders and SD:
+  open raw|wav|slices|packs|exports|reports|catalog|sd
+  sync-sd, sd-sync, rsync-sd
+
+Backend and diagnostics:
+  doctor, config, legal, backend COMMAND
+
+Advanced backend commands are still available through:
+  mpc-sample-hunter
+TXT
+}
+
+help_topic() {
+  local topic="${1:-}"
+
+  case "$topic" in
+    find|search)
+      cat <<'TXT'
+Search your catalog.
+
+Usage:
+  mpc-crate find drums
+  mpc-crate search 90
+  mpc-crate search bass 40
+
+Default result limit is 20.
+TXT
+      ;;
+    bpm-missing|bpm)
+      cat <<'TXT'
+Fill missing BPM values in the catalog.
+
+Usage:
+  mpc-crate bpm-missing
+  mpc-crate bpm-missing --limit 20
+  mpc-crate bpm-missing --dry-run
+  mpc-crate bpm-missing --limit 20 --show-missing
+
+Writes a timestamped TSV report and updates catalog/samples.tsv unless
+--dry-run or --no-update is passed. Missing stale catalog paths are
+reported in the TSV and skipped without consuming the limit.
+TXT
+      ;;
+    scan|catalog)
+      cat <<'TXT'
+Build or refresh the local catalog.
+
+Usage:
+  mpc-crate scan
+  mpc-crate scan ~/Downloads/drums
+  mpc-crate stats
+
+With no folder, scan indexes the main project audio folders.
+TXT
+      ;;
+    slice|chop)
+      cat <<'TXT'
+Slice samples.
+
+Usage:
+  mpc-crate chop break.wav
+  mpc-crate slice break.wav
+  mpc-crate reslice break.wav --preset drums
+  mpc-crate reslice loop.wav --preset loops --max-slices 24
+  mpc-crate slice
+
+With no file, it runs the backend slice-dir command.
+TXT
+      ;;
+    pack|quick-pack|pad-map)
+      cat <<'TXT'
+Build a pack.
+
+Usage:
+  mpc-crate pack dusty_drums
+  mpc-crate pack dusty_drums ~/Downloads/drums
+  mpc-crate kit mykit
+  mpc-crate quick-pack dusty_drums drums 32
+  mpc-crate quick-pack boom_bap drums 32 --bpm 85-96 --no-clipped --max-source 4
+  mpc-crate quick-pack breaks drums 16 --max-duration 8
+  mpc-crate pad-map dusty_drums
+
+Drum quick-packs default to --max-duration 10 to avoid pulling full source WAVs.
+TXT
+      ;;
+    browse|browser)
+      cat <<'TXT'
+Browse catalog samples with fzf.
+
+Usage:
+  mpc-crate browse
+  mpc-crate browse drums
+
+Actions include preview, BPM detection, guarded reslice, add to pack,
+and show full path. Falls back to catalog search when fzf is missing.
+TXT
+      ;;
+    export|sd)
+      cat <<'TXT'
+Export to MPC and sync to SD when available.
+
+Usage:
+  mpc-crate export dusty_drums
+  mpc-crate prepare-sd dusty_drums
+  mpc-crate sync-sd
+
+Default SD target:
+  /media/jeremy/MPC_SD_MAST
+TXT
+      ;;
+    workflow)
+      cat <<'TXT'
+Guided workflows.
+
+Usage:
+  mpc-crate workflow new-pack
+  mpc-crate workflow drum-kit
+  mpc-crate workflow loop-pack
+  mpc-crate workflow sd-export
+TXT
+      ;;
+    open)
+      cat <<'TXT'
+Open project folders.
+
+Usage:
+  mpc-crate open raw
+  mpc-crate open wav
+  mpc-crate open slices
+  mpc-crate open packs
+  mpc-crate open sd
+TXT
+      ;;
+    ""|-h|--help)
+      short_help
+      ;;
+    *)
+      echo "No focused help for: $topic"
+      echo
+      commands_help
+      ;;
+  esac
+}
+
+clean_field() {
+  printf '%s' "${1:-}" | tr '\t\r\n' '   ' | sed 's/  */ /g; s/^ //; s/ $//'
+}
+
+relative_path() {
+  local file="$1"
+
+  if command -v realpath >/dev/null 2>&1; then
+    realpath --relative-to="$ROOT" "$file" 2>/dev/null || printf '%s\n' "$file"
+  else
+    printf '%s\n' "$file"
+  fi
+}
+
+audio_probe() {
+  local file="$1"
+  local key
+  local value
+  local duration=""
+  local rate=""
+  local channels=""
+
+  if ! command -v ffprobe >/dev/null 2>&1; then
+    printf '\t\t\n'
+    return
+  fi
+
+  while IFS='=' read -r key value; do
+    case "$key" in
+      duration)
+        if [ -n "${value:-}" ]; then
+          duration="$(awk -v d="$value" 'BEGIN {printf "%.2f", d}')"
+        fi
+        ;;
+      sample_rate)
+        rate="${value:-}"
+        ;;
+      channels)
+        channels="${value:-}"
+        ;;
+    esac
+  done < <(
+    ffprobe -v error -select_streams a:0 \
+      -show_entries stream=sample_rate,channels:format=duration \
+      -of default=nw=1:nk=0 "$file" 2>/dev/null || true
+  )
+
+  printf '%s\t%s\t%s\n' "$duration" "$rate" "$channels"
+}
+
+probe_duration() {
+  local file="$1"
+  local duration=""
+
+  if ! command -v ffprobe >/dev/null 2>&1; then
+    printf '0\n'
+    return
+  fi
+
+  duration="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$file" 2>/dev/null || true)"
+  if [ -n "$duration" ]; then
+    awk -v d="$duration" 'BEGIN {printf "%.2f\n", d}'
+  else
+    printf '0\n'
+  fi
+}
+
+estimate_bpm() {
+  local file="$1"
+  local output
+  local status
+
+  if ! command -v aubio >/dev/null 2>&1; then
+    printf 'unknown\n'
+    return
+  fi
+
+  set +e
+  output="$(aubio tempo "$file" 2>/dev/null)"
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ] || [ -z "$output" ]; then
+    printf 'unknown\n'
+    return
+  fi
+
+  printf '%s\n' "$output" | awk '
+    /^[0-9]/ {sum += $1; n++}
+    END {
+      if (n > 0) {
+        printf "%.2f\n", 60 / (sum / n)
+      } else {
+        print "unknown"
+      }
+    }'
+}
+
+catalog_path_to_file() {
+  local path="$1"
+  case "$path" in
+    /*) printf '%s\n' "$path" ;;
+    *) printf '%s\n' "$ROOT/$path" ;;
+  esac
+}
+
+mpc_clean_filename() {
+  local name="$1"
+  local ext="${name##*.}"
+  local base="${name%.*}"
+
+  base="$(printf '%s' "$base" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9._-]/_/g; s/__*/_/g; s/^_//; s/_$//')"
+  base="$(printf '%s' "$base" | cut -c1-48)"
+
+  if [ -z "$base" ]; then
+    base="sample"
+  fi
+
+  printf '%s.%s\n' "$base" "$ext"
+}
+
+copy_unique_audio() {
+  local src="$1"
+  local dest_dir="$2"
+  local base
+  local stem
+  local ext
+  local dest
+  local n=2
+
+  mkdir -p "$dest_dir"
+  base="$(mpc_clean_filename "$(basename "$src")")"
+  stem="${base%.*}"
+  ext="${base##*.}"
+  dest="$dest_dir/$base"
+
+  while [ -e "$dest" ]; do
+    dest="$dest_dir/${stem}_$(printf '%02d' "$n").$ext"
+    n=$((n + 1))
+  done
+
+  cp "$src" "$dest"
+  printf '%s\n' "$dest"
+}
+
+pack_bucket_for_file() {
+  local text
+  text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+
+  case "$text" in
+    *kick*|*/kicks/*)
+      printf 'drums'
+      ;;
+    *snare*|*clap*|*hihat*|*hat*|*rim*|*tom*|*ride*|*crash*|*drum*|*break*|*breakbeat*|*hit*|*/snares/*|*/hats/*|*/claps/*|*/drums/*)
+      printf 'drums'
+      ;;
+    *perc*|*conga*|*bongo*|*shaker*|*tamb*|*/percs/*|*/percussion/*)
+      printf 'percussion'
+      ;;
+    *bass*|*sub*|*808*|*/bass/*)
+      printf 'bass'
+      ;;
+    *rhodes*|*piano*|*keys*|*organ*|*epiano*|*/keys/*)
+      printf 'keys'
+      ;;
+    *guitar*|*strum*|*riff*|*/guitar/*)
+      printf 'guitar'
+      ;;
+    *synth*|*pad*|*lead*|*arp*|*/synth/*)
+      printf 'synth'
+      ;;
+    *vocal*|*voice*|*vox*|*choir*|*acapella*|*/vocal/*|*/vocals/*)
+      printf 'vocal'
+      ;;
+    *fx*|*sfx*|*noise*|*texture*|*ambience*|*ambient*|*riser*|*impact*|*foley*|*/fx/*|*/textures/*)
+      printf 'fx'
+      ;;
+    *slice*|*chop*|*/chops/*|*/slices/*)
+      printf 'chops'
+      ;;
+    *loop*|*/loops/*)
+      printf 'loops'
+      ;;
+    *)
+      printf 'unsorted'
+      ;;
+  esac
+}
+
+copy_sample_to_pack() {
+  local src="$1"
+  local pack="$2"
+  local bucket
+  local dest
+
+  bucket="$(pack_bucket_for_file "$src")"
+  dest="$(copy_unique_audio "$src" "$pack/$bucket")"
+  printf '%s\n' "$dest"
+}
+
+classify_sample() {
+  local text
+  text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+
+  case "$text" in
+    *kick*|*snare*|*hihat*|*hat*|*clap*|*rim*|*tom*|*ride*|*crash*|*drum*|*break*|*breakbeat*)
+      printf 'drums'
+      ;;
+    *bass*|*sub*|*808*)
+      printf 'bass'
+      ;;
+    *rhodes*|*piano*|*keys*|*organ*|*epiano*)
+      printf 'keys'
+      ;;
+    *guitar*|*strum*|*riff*)
+      printf 'guitar'
+      ;;
+    *synth*|*pad*|*lead*|*arp*)
+      printf 'synth'
+      ;;
+    *vocal*|*voice*|*vox*|*choir*)
+      printf 'vocals'
+      ;;
+    *fx*|*sfx*|*noise*|*texture*|*ambience*|*ambient*)
+      printf 'fx'
+      ;;
+    *perc*|*conga*|*bongo*|*shaker*|*tamb*)
+      printf 'percussion'
+      ;;
+    *)
+      printf 'unknown'
+      ;;
+  esac
+}
+
+latest_bpm_report() {
+  find "$REPORTS" -maxdepth 1 -type f -name 'bpm-report-*.csv' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr \
+    | awk 'NR == 1 {sub(/^[^ ]+ /, ""); print}'
+}
+
+bpm_from_reports() {
+  local file="$1"
+  local rel="$2"
+  local report="$BPM_REPORT"
+
+  if [ -z "$report" ] || [ ! -s "$report" ]; then
+    printf ''
+    return
+  fi
+
+  awk -F, -v file="$file" -v rel="$rel" '
+    NR == 1 {next}
+    {
+      path=$1
+      gsub(/^"/, "", path)
+      gsub(/"$/, "", path)
+      if ((path == file || path == rel) && $3 != "" && $3 != "unknown") {
+        print $3
+        found=1
+        exit
+      }
+    }
+    END {if (!found) exit 1}
+  ' "$report" 2>/dev/null || true
+}
+
+default_scan_dirs() {
+  for dir in "$RAW" "$WAV" "$SLICES" "$PACKS" "$EXPORTS" "$ROOT/organized"; do
+    [ -d "$dir" ] && printf '%s\n' "$dir"
+  done
+}
+
+catalog_scan() {
+  local dirs=()
+  local tmp
+  local log
+  local count=0
+  local src_label=""
+
+  if [ "$#" -eq 0 ]; then
+    while IFS= read -r dir; do
+      dirs+=("$dir")
+    done < <(default_scan_dirs)
+  else
+    while [ "$#" -gt 0 ]; do
+      dirs+=("$(expand_path "$1")")
+      shift
+    done
+  fi
+
+  [ "${#dirs[@]}" -gt 0 ] || die "No scan folders were found under $ROOT"
+  for dir in "${dirs[@]}"; do
+    [ -d "$dir" ] || die "Not a directory: $dir"
+    src_label="${src_label}${src_label:+, }$dir"
+  done
+
+  mkdir -p "$CATALOG_DIR"
+  BPM_REPORT="$(latest_bpm_report)"
+  if [ -n "$BPM_REPORT" ] && [ "$(wc -l < "$BPM_REPORT")" -le 1 ]; then
+    BPM_REPORT=""
+  fi
+
+  tmp="$CATALOG_FILE.tmp.$$"
+  log="$CATALOG_DIR/scan-$(stamp).log"
+
+  {
+    printf 'path\tname\text\tbucket\tduration_seconds\tsample_rate\tchannels\tbpm\tsize_bytes\tmodified_epoch\n'
+
+    find "${dirs[@]}" -type f \( \
+      -iname '*.wav' -o \
+      -iname '*.aif' -o \
+      -iname '*.aiff' -o \
+      -iname '*.flac' -o \
+      -iname '*.mp3' -o \
+      -iname '*.m4a' -o \
+      -iname '*.ogg' \
+    \) -print0 2>/dev/null | sort -z | while IFS= read -r -d '' file; do
+      local rel
+      local name
+      local ext
+      local bucket
+      local duration
+      local rate
+      local channels
+      local bpm
+      local size
+      local modified
+
+      rel="$(relative_path "$file")"
+      name="$(basename "$file")"
+      ext="${name##*.}"
+      ext="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
+      bucket="$(classify_sample "$rel")"
+      IFS=$'\t' read -r duration rate channels < <(audio_probe "$file")
+      bpm="$(bpm_from_reports "$file" "$rel")"
+      size="$(stat -c%s "$file" 2>/dev/null || printf '')"
+      modified="$(stat -c%Y "$file" 2>/dev/null || printf '')"
+
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$(clean_field "$rel")" \
+        "$(clean_field "$name")" \
+        "$(clean_field "$ext")" \
+        "$(clean_field "$bucket")" \
+        "$(clean_field "$duration")" \
+        "$(clean_field "$rate")" \
+        "$(clean_field "$channels")" \
+        "$(clean_field "$bpm")" \
+        "$(clean_field "$size")" \
+        "$(clean_field "$modified")"
+    done
+  } > "$tmp"
+
+  mv "$tmp" "$CATALOG_FILE"
+  count="$(catalog_count)"
+  {
+    echo "MPC crate catalog scan"
+    echo "Created: $(date)"
+    echo "Sources: $src_label"
+    echo "Catalog: $CATALOG_FILE"
+    echo "Files: $count"
+  } > "$log"
+
+  echo "[+] Catalog scan complete"
+  echo "[+] Sources: $src_label"
+  echo "[+] Files indexed: $count"
+  echo "[+] Catalog: $CATALOG_FILE"
+  echo "[+] Log: $log"
+}
+
+require_catalog() {
+  [ -s "$CATALOG_FILE" ] || {
+    echo "Catalog is missing."
+    echo "Run this first:"
+    echo "  mpc-crate scan"
+    exit 1
+  }
+}
+
+catalog_stats() {
+  require_catalog
+
+  echo "Catalog: $CATALOG_FILE"
+  echo
+
+  awk -F '\t' '
+    NR == 1 {next}
+    {
+      total += 1
+      bucket[$4] += 1
+      ext[$3] += 1
+      dur += ($5 == "" ? 0 : $5)
+      bytes += ($9 == "" ? 0 : $9)
+    }
+    END {
+      printf "Total files: %d\n", total
+      printf "Total duration: %.2f hours\n", dur / 3600
+      printf "Total size: %.2f GB\n", bytes / 1073741824
+      print ""
+      print "Buckets:"
+      for (b in bucket) {
+        printf "  %-12s %d\n", b, bucket[b]
+      }
+      print ""
+      print "Formats:"
+      for (e in ext) {
+        printf "  %-12s %d\n", e, ext[e]
+      }
+    }
+  ' "$CATALOG_FILE"
+}
+
+catalog_search() {
+  local query="${1:-}"
+  local limit="${2:-20}"
+
+  require_catalog
+  [ -n "$query" ] || die "Search needs a query. Example: mpc-crate find drums"
+  [[ "$limit" =~ ^[0-9]+$ ]] || die "Result limit must be a positive integer"
+
+  awk -F '\t' -v q="$query" -v limit="$limit" '
+    BEGIN {
+      lq=tolower(q)
+      numeric=(q ~ /^[0-9]+([.][0-9]+)?$/)
+      target=q + 0
+      printf "%-12s %-8s %-8s %-8s %-9s %s\n", "BUCKET", "DUR", "BPM", "RATE", "SIZE_MB", "PATH"
+      printf "%-12s %-8s %-8s %-8s %-9s %s\n", "------", "---", "---", "----", "-------", "----"
+    }
+    NR == 1 {next}
+    {
+      text=tolower($1 " " $2 " " $3 " " $4 " " $5 " " $6 " " $7 " " $8)
+      hit=(index(text, lq) > 0)
+
+      if (numeric) {
+        dur=($5 == "" ? -1 : $5 + 0)
+        bpm=($8 == "" ? -1 : $8 + 0)
+        if (bpm >= 0 && bpm >= target - 2 && bpm <= target + 2) {
+          hit=1
+        }
+        if (dur >= 0 && dur >= target - 0.5 && dur <= target + 0.5) {
+          hit=1
+        }
+      }
+
+      if (hit && shown < limit) {
+        size_mb=($9 == "" ? 0 : $9 / 1048576)
+        printf "%-12s %-8s %-8s %-8s %-9.1f %s\n", $4, ($5 == "" ? "-" : $5), ($8 == "" ? "-" : $8), ($6 == "" ? "-" : $6), size_mb, $1
+        shown += 1
+      }
+    }
+    END {
+      if (shown == 0) {
+        print "No matches."
+      }
+    }
+  ' "$CATALOG_FILE"
+}
+
+similar_files() {
+  local needle
+  needle="$(basename "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [ -n "$needle" ] || return 0
+
+  find "$RAW" "$WAV" "$SLICES" "$PACKS" -type f \( \
+    -iname '*.wav' -o \
+    -iname '*.aif' -o \
+    -iname '*.aiff' -o \
+    -iname '*.flac' -o \
+    -iname '*.mp3' -o \
+    -iname '*.m4a' -o \
+    -iname '*.ogg' \
+  \) 2>/dev/null \
+    | awk -v n="$needle" '
+      BEGIN {gsub(/\.[^.]+$/, "", n)}
+      {
+        path=$0
+        base=tolower($0)
+        sub(/^.*\//, "", base)
+        if (index(base, n) || index(n, base)) print path
+      }
+    ' \
+    | head -n 8
+}
+
+resolve_audio_file() {
+  local input="$1"
+  local expanded
+  local base
+  local found=""
+
+  expanded="$(expand_path "$input")"
+  base="$(basename "$expanded")"
+
+  for candidate in \
+    "$expanded" \
+    "$PWD/$expanded" \
+    "$RAW/$expanded" \
+    "$WAV/$expanded" \
+    "$SLICES/$expanded" \
+    "$PACKS/$expanded"; do
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  found="$(find "$RAW" "$WAV" "$SLICES" "$PACKS" -type f \( \
+    -iname "$base" -o \
+    -iname "$base.*" \
+  \) 2>/dev/null | head -n 1)"
+
+  if [ -n "$found" ]; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+
+  echo "Could not find: $input" >&2
+  echo >&2
+  echo "Searched:" >&2
+  echo "  ./$input" >&2
+  echo "  $RAW" >&2
+  echo "  $WAV" >&2
+  echo "  $SLICES" >&2
+  echo "  $PACKS" >&2
+  echo >&2
+  echo "Similar files:" >&2
+  similar_files "$input" | sed 's/^/  /' >&2 || true
+  return 1
+}
+
+resolve_pack_name() {
+  local name="${1:-}"
+  local expanded
+
+  [ -n "$name" ] || return 1
+  expanded="$(expand_path "$name")"
+
+  if [ -d "$expanded" ]; then
+    basename "$expanded"
+  else
+    basename "$name"
+  fi
+}
+
+require_pack() {
+  local name="$1"
+  if [ ! -d "$PACKS/$name" ]; then
+    echo "Could not find pack: $name" >&2
+    echo >&2
+    echo "Available packs:" >&2
+    find "$PACKS" -mindepth 1 -maxdepth 1 -type d -printf '  %f\n' 2>/dev/null | sort >&2
+    exit 1
+  fi
+}
+
+resolve_pack_dir() {
+  local name="$1"
+  local expanded
+
+  expanded="$(expand_path "$name")"
+  if [ -d "$expanded" ]; then
+    printf '%s\n' "$expanded"
+  elif [ -d "$PACKS/$name" ]; then
+    printf '%s\n' "$PACKS/$name"
+  elif [ -d "$PACKS/$(safe_name "$name")" ]; then
+    printf '%s\n' "$PACKS/$(safe_name "$name")"
+  else
+    return 1
+  fi
+}
+
+pad_bank_priority() {
+  local rel="$1"
+  local text
+  text="$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]')"
+
+  case "$text" in
+    *kick*|*/kicks/*) printf 'A\t10\n' ;;
+    *snare*|*/snares/*) printf 'A\t20\n' ;;
+    *clap*|*/claps/*) printf 'A\t30\n' ;;
+    *hihat*|*hat*|*/hats/*) printf 'A\t40\n' ;;
+    *rim*|*tom*|*ride*|*crash*) printf 'A\t50\n' ;;
+    *drum*|*break*|*hit*|*/drums/*) printf 'A\t60\n' ;;
+    *perc*|*conga*|*bongo*|*shaker*|*tamb*|*/percs/*|*/percussion/*) printf 'B\t10\n' ;;
+    *bass*|*sub*|*808*|*/bass/*) printf 'B\t40\n' ;;
+    *rhodes*|*piano*|*keys*|*organ*|*epiano*|*/keys/*) printf 'C\t10\n' ;;
+    *guitar*|*strum*|*riff*|*/guitar/*) printf 'C\t20\n' ;;
+    *synth*|*pad*|*lead*|*arp*|*/synth/*) printf 'C\t30\n' ;;
+    *loop*|*/loops/*) printf 'C\t50\n' ;;
+    *slice*|*chop*|*/chops/*|*/slices/*) printf 'D\t10\n' ;;
+    *vocal*|*voice*|*vox*|*choir*|*acapella*|*/vocal/*|*/vocals/*) printf 'D\t30\n' ;;
+    *fx*|*sfx*|*noise*|*texture*|*ambience*|*ambient*|*riser*|*impact*|*foley*|*/fx/*|*/textures/*) printf 'D\t50\n' ;;
+    *random*|*unknown*|*unsorted*) printf 'D\t80\n' ;;
+    *) printf 'D\t90\n' ;;
+  esac
+}
+
+public_pad_map() {
+  local name="${1:-}"
+  local pack
+  local out
+  local tmp
+  local warnings
+
+  [ -n "$name" ] || die "pad-map needs a pack name or directory"
+  pack="$(resolve_pack_dir "$name")" || die "Could not find pack: $name"
+  out="$pack/PAD_MAP.txt"
+  tmp="$TMP/pad-map-$(stamp).tsv"
+  warnings="$TMP/pad-map-warnings-$(stamp).txt"
+  mkdir -p "$TMP"
+  : > "$tmp"
+  : > "$warnings"
+  declare -A safe_seen=()
+
+  while IFS= read -r -d '' file; do
+    local rel
+    local bank_priority
+    local bank
+    local priority
+    local safe
+    local raw_safe
+    local stem
+    local ext
+    local candidate
+    local n
+    local duration
+    local base
+
+    rel="$(realpath --relative-to="$pack" "$file" 2>/dev/null || printf '%s\n' "$file")"
+    bank_priority="$(pad_bank_priority "$rel")"
+    bank="${bank_priority%%$'\t'*}"
+    priority="${bank_priority#*$'\t'}"
+    base="$(basename "$file")"
+    safe="$(mpc_clean_filename "$base")"
+    raw_safe="$safe"
+    if [ -n "${safe_seen[$safe]+x}" ]; then
+      stem="${safe%.*}"
+      ext="${safe##*.}"
+      n=2
+      candidate="${stem}_$(printf '%02d' "$n").$ext"
+      while [ -n "${safe_seen[$candidate]+x}" ]; do
+        n=$((n + 1))
+        candidate="${stem}_$(printf '%02d' "$n").$ext"
+      done
+      safe="$candidate"
+    fi
+    safe_seen[$safe]=1
+    duration="$(probe_duration "$file")"
+
+    if [ "$base" != "$safe" ] || [ "$raw_safe" != "$safe" ]; then
+      printf '%s\t%s\n' "$rel" "$safe" >> "$warnings"
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\n' "$bank" "$priority" "$rel" "$safe" "$duration" >> "$tmp"
+  done < <(find "$pack" -type f -iname '*.wav' -print0 2>/dev/null | sort -z)
+
+  {
+    echo "MPC Pad Map"
+    echo "Created: $(date)"
+    echo "Pack: $pack"
+    echo
+    echo "Bank A - Drums"
+    n=1
+    awk -F '\t' '$1 == "A" {print}' "$tmp" | sort -t $'\t' -k2,2n -k3,3 | head -n 16 | while IFS=$'\t' read -r bank priority rel safe duration; do
+      printf "A%02d - %-52s %7ss\n" "$n" "$safe" "$duration"
+      printf "      %s\n" "$rel"
+      n=$((n + 1))
+    done
+
+    echo
+    echo "Bank B - Percussion / Bass"
+    n=1
+    awk -F '\t' '$1 == "B" {print}' "$tmp" | sort -t $'\t' -k2,2n -k3,3 | head -n 16 | while IFS=$'\t' read -r bank priority rel safe duration; do
+      printf "B%02d - %-52s %7ss\n" "$n" "$safe" "$duration"
+      printf "      %s\n" "$rel"
+      n=$((n + 1))
+    done
+
+    echo
+    echo "Bank C - Melodic / Loops"
+    n=1
+    awk -F '\t' '$1 == "C" {print}' "$tmp" | sort -t $'\t' -k2,2n -k3,3 | head -n 16 | while IFS=$'\t' read -r bank priority rel safe duration; do
+      printf "C%02d - %-52s %7ss\n" "$n" "$safe" "$duration"
+      printf "      %s\n" "$rel"
+      n=$((n + 1))
+    done
+
+    echo
+    echo "Bank D - Chops / Vocals / FX / Other"
+    n=1
+    awk -F '\t' '$1 == "D" {print}' "$tmp" | sort -t $'\t' -k2,2n -k3,3 | head -n 16 | while IFS=$'\t' read -r bank priority rel safe duration; do
+      printf "D%02d - %-52s %7ss\n" "$n" "$safe" "$duration"
+      printf "      %s\n" "$rel"
+      n=$((n + 1))
+    done
+
+    echo
+    echo "Overflow"
+    for bank in A B C D; do
+      total="$(awk -F '\t' -v b="$bank" '$1 == b {n++} END {print n + 0}' "$tmp")"
+      if [ "$total" -gt 16 ]; then
+        printf "  Bank %s has %d extra file(s) beyond the first 16 pads.\n" "$bank" "$((total - 16))"
+      fi
+    done
+
+    if [ -s "$warnings" ]; then
+      echo
+      echo "MPC Filename Suggestions"
+      while IFS=$'\t' read -r rel safe; do
+        printf "  %s -> %s\n" "$rel" "$safe"
+      done < "$warnings"
+    fi
+  } > "$out"
+
+  rm -f "$tmp" "$warnings"
+  cat "$out"
+}
+
+public_audition() {
+  run_backend audition "$@"
+}
+
+public_clean() {
+  run_backend normalize "$@"
+  run_backend trim "$@"
+}
+
+public_bpm() {
+  if [ "$#" -eq 0 ]; then
+    run_backend bpm-dir
+  else
+    local file
+    local bpm
+    file="$(resolve_audio_file "$1")"
+    bpm="$(estimate_bpm "$file")"
+    echo "BPM Detection"
+    echo
+    echo "[+] File: $file"
+    if [[ "$bpm" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      echo "[+] Estimated BPM: $bpm"
+    else
+      echo "WARN: Could not estimate BPM."
+      return 1
+    fi
+  fi
+}
+
+bpm_missing() {
+  local limit=0
+  local dry_run=0
+  local update_catalog=1
+  local show_missing=0
+  local report
+  local tmp
+  local found=0
+  local missing=0
+  local measured=0
+  local updated=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --limit)
+        shift
+        limit="${1:-}"
+        [[ "$limit" =~ ^[0-9]+$ ]] || die "--limit needs a number"
+        ;;
+      --dry-run|-n)
+        dry_run=1
+        update_catalog=0
+        ;;
+      --no-update)
+        update_catalog=0
+        ;;
+      --show-missing)
+        show_missing=1
+        ;;
+      *)
+        die "Unknown bpm-missing option: $1"
+        ;;
+    esac
+    shift
+  done
+
+  require_catalog
+  mkdir -p "$REPORTS"
+  report="$REPORTS/bpm-missing-$(stamp).tsv"
+
+  if ! command -v aubio >/dev/null 2>&1; then
+    die "bpm-missing requires aubio. Run: mpc-crate doctor"
+  fi
+
+  printf 'path\tduration_seconds\testimated_bpm\tstatus\n' > "$report"
+
+  echo "[+] Filling missing BPM values"
+  echo "[+] Catalog: $CATALOG_FILE"
+  echo "[+] Report: $report"
+  [ "$limit" -gt 0 ] && echo "[+] Limit: $limit"
+  [ "$dry_run" -eq 1 ] && echo "[+] Dry run: catalog will not be updated"
+
+  while IFS=$'\t' read -r path duration; do
+    local file
+    local bpm
+    local status="ok"
+
+    [ -n "$path" ] || continue
+    file="$(catalog_path_to_file "$path")"
+    if [ ! -f "$file" ]; then
+      missing=$((missing + 1))
+      printf '%s\t%s\t%s\t%s\n' "$path" "${duration:-}" "unknown" "missing_file" >> "$report"
+      [ "$show_missing" -eq 1 ] && printf '[!] Missing: %s\n' "$path"
+      continue
+    fi
+
+    if [ "$limit" -gt 0 ] && [ "$found" -ge "$limit" ]; then
+      break
+    fi
+
+    found=$((found + 1))
+    bpm="$(estimate_bpm "$file")"
+    if [[ "$bpm" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      measured=$((measured + 1))
+    else
+      status="unknown"
+    fi
+
+    printf '%s\t%s\t%s\t%s\n' "$path" "${duration:-$(probe_duration "$file")}" "$bpm" "$status" >> "$report"
+    printf '[+] %-8s %s\n' "$bpm" "$path"
+  done < <(awk -F '\t' 'NR > 1 && ($8 == "" || $8 == "unknown") {print $1 "\t" $5}' "$CATALOG_FILE")
+
+  if [ "$update_catalog" -eq 1 ] && [ "$measured" -gt 0 ]; then
+    tmp="$CATALOG_FILE.tmp.$$"
+    awk -F '\t' '
+      BEGIN {OFS=FS}
+      FNR == NR {
+        if (FNR > 1 && $3 ~ /^[0-9]+([.][0-9]+)?$/) {
+          bpm[$1] = $3
+        }
+        next
+      }
+      FNR == 1 {
+        print
+        next
+      }
+      ($1 in bpm) && ($8 == "" || $8 == "unknown") {
+        $8 = bpm[$1]
+        changed += 1
+      }
+      {print}
+      END {
+        if (changed == "") {
+          changed = 0
+        }
+      }
+    ' "$report" "$CATALOG_FILE" > "$tmp"
+    mv "$tmp" "$CATALOG_FILE"
+    updated="$measured"
+  fi
+
+  echo
+  echo "[+] Existing BPM rows checked: $found"
+  echo "[+] Stale missing-file rows:   $missing"
+  echo "[+] BPM values measured:      $measured"
+  echo "[+] Catalog values updated:   $updated"
+  echo "[+] Report:                   $report"
+}
+
+public_slice() {
+  if [ "$#" -eq 0 ]; then
+    run_backend slice-dir
+  else
+    local file="$1"
+    shift
+    file="$(resolve_audio_file "$file")"
+    run_backend slice "$file" "$@"
+  fi
+}
+
+fixed_slice_to_dir() {
+  local src="$1"
+  local seconds="$2"
+  local outdir="$3"
+
+  mkdir -p "$outdir"
+  ffmpeg -nostdin -y -hide_banner -loglevel error \
+    -i "$src" \
+    -f segment \
+    -segment_time "$seconds" \
+    -c copy \
+    "$outdir/slice_%03d.wav"
+}
+
+prune_short_slices() {
+  local outdir="$1"
+  local min_duration="$2"
+  local removed=0
+
+  find "$outdir" -type f -iname '*.wav' -print0 2>/dev/null | while IFS= read -r -d '' file; do
+    local duration
+    duration="$(probe_duration "$file")"
+    if awk -v d="$duration" -v min="$min_duration" 'BEGIN {exit !(d < min)}'; then
+      rm -f "$file"
+      removed=$((removed + 1))
+    fi
+  done
+}
+
+slice_count() {
+  local outdir="$1"
+  find "$outdir" -type f -iname '*.wav' 2>/dev/null | wc -l | awk '{print $1}'
+}
+
+write_slice_report() {
+  local outdir="$1"
+  local src="$2"
+  local preset="$3"
+  local threshold="$4"
+  local min_silence="$5"
+  local min_duration="$6"
+  local max_slices="$7"
+  local count="$8"
+  local mode="$9"
+
+  {
+    echo "MPC Guarded Slice Report"
+    echo "Created: $(date)"
+    echo "Source: $src"
+    echo "Preset: $preset"
+    echo "Mode: $mode"
+    echo "Threshold: $threshold"
+    echo "Minimum silence: $min_silence"
+    echo "Minimum slice duration: $min_duration"
+    echo "Maximum slices: $max_slices"
+    echo "Slices kept: $count"
+  } > "$outdir/SLICE_REPORT.txt"
+}
+
+guarded_slice() {
+  local src=""
+  local preset="drums"
+  local threshold=""
+  local min_silence=""
+  local min_duration=""
+  local max_slices=""
+  local fixed_seconds=""
+  local outdir=""
+  local dry_run=0
+  local base
+  local count
+  local oversliced
+  local fixed_out
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --preset)
+        shift
+        preset="${1:-}"
+        ;;
+      --threshold)
+        shift
+        threshold="${1:-}"
+        ;;
+      --silence|--min-silence)
+        shift
+        min_silence="${1:-}"
+        ;;
+      --min-duration)
+        shift
+        min_duration="${1:-}"
+        ;;
+      --max-slices)
+        shift
+        max_slices="${1:-}"
+        [[ "$max_slices" =~ ^[0-9]+$ ]] || die "--max-slices needs a number"
+        ;;
+      --fixed-seconds)
+        shift
+        fixed_seconds="${1:-}"
+        ;;
+      --out)
+        shift
+        outdir="$(expand_path "${1:-}")"
+        ;;
+      --dry-run|-n)
+        dry_run=1
+        ;;
+      -*)
+        die "Unknown reslice option: $1"
+        ;;
+      *)
+        if [ -z "$src" ]; then
+          src="$1"
+        else
+          die "Unexpected reslice argument: $1"
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  [ -n "$src" ] || die "reslice needs a file. Example: mpc-crate reslice break.wav --preset drums"
+  src="$(resolve_audio_file "$src")"
+
+  case "$preset" in
+    drums|hits)
+      threshold="${threshold:-1%}"
+      min_silence="${min_silence:-0.08}"
+      min_duration="${min_duration:-0.08}"
+      max_slices="${max_slices:-64}"
+      fixed_seconds="${fixed_seconds:-2}"
+      ;;
+    loops)
+      threshold="${threshold:-1%}"
+      min_silence="${min_silence:-0.25}"
+      min_duration="${min_duration:-0.50}"
+      max_slices="${max_slices:-32}"
+      fixed_seconds="${fixed_seconds:-4}"
+      ;;
+    vocals|vocal)
+      threshold="${threshold:-0.5%}"
+      min_silence="${min_silence:-0.30}"
+      min_duration="${min_duration:-0.30}"
+      max_slices="${max_slices:-32}"
+      fixed_seconds="${fixed_seconds:-4}"
+      ;;
+    fixed)
+      threshold="${threshold:-n/a}"
+      min_silence="${min_silence:-n/a}"
+      min_duration="${min_duration:-0}"
+      max_slices="${max_slices:-9999}"
+      fixed_seconds="${fixed_seconds:-4}"
+      ;;
+    *)
+      die "Unknown reslice preset: $preset"
+      ;;
+  esac
+
+  base="$(basename "$src")"
+  base="${base%.*}"
+  outdir="${outdir:-$SLICES/$(safe_name "${base}_${preset}_$(stamp)")}"
+
+  echo "[+] Guarded slicing"
+  echo "[+] Source: $src"
+  echo "[+] Preset: $preset"
+  echo "[+] Output: $outdir"
+  echo "[+] Max slices: $max_slices"
+
+  if [ "$dry_run" -eq 1 ]; then
+    echo "[+] Dry run only; no slices written"
+    return 0
+  fi
+
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    die "reslice requires ffmpeg. Run: mpc-crate doctor"
+  fi
+
+  if [ "$preset" = "fixed" ]; then
+    fixed_slice_to_dir "$src" "$fixed_seconds" "$outdir"
+    count="$(slice_count "$outdir")"
+    write_slice_report "$outdir" "$src" "$preset" "$threshold" "$min_silence" "$min_duration" "$max_slices" "$count" "fixed"
+    echo "[+] Fixed slices created: $count"
+    echo "[+] Output: $outdir"
+    return 0
+  fi
+
+  if ! command -v sox >/dev/null 2>&1; then
+    die "reslice requires sox. Run: mpc-crate doctor"
+  fi
+
+  mkdir -p "$outdir"
+  sox "$src" "$outdir/slice_%03n.wav" \
+    silence 1 0.03 "$threshold" 1 "$min_silence" "$threshold" : newfile : restart || {
+      echo "[!] Silence slicing failed; using fixed-length fallback"
+      fixed_slice_to_dir "$src" "$fixed_seconds" "$outdir"
+    }
+
+  prune_short_slices "$outdir" "$min_duration"
+  count="$(slice_count "$outdir")"
+
+  if [ "$count" -gt "$max_slices" ]; then
+    oversliced="${outdir}.oversliced"
+    mv "$outdir" "$oversliced"
+    fixed_out="$SLICES/$(safe_name "${base}_fixed_${fixed_seconds}s_$(stamp)")"
+    echo "[!] Slice guard tripped: $count slices is over max $max_slices"
+    echo "[!] Oversliced output moved to: $oversliced"
+    echo "[+] Creating fixed-length fallback: $fixed_out"
+    fixed_slice_to_dir "$src" "$fixed_seconds" "$fixed_out"
+    count="$(slice_count "$fixed_out")"
+    write_slice_report "$fixed_out" "$src" "$preset" "$threshold" "$min_silence" "$min_duration" "$max_slices" "$count" "fixed-fallback"
+    echo "[+] Fallback slices created: $count"
+    echo "[+] Output: $fixed_out"
+    return 0
+  fi
+
+  write_slice_report "$outdir" "$src" "$preset" "$threshold" "$min_silence" "$min_duration" "$max_slices" "$count" "silence"
+  echo "[+] Slices created: $count"
+  echo "[+] Output: $outdir"
+}
+
+public_pack() {
+  local name="${1:-}"
+  [ -n "$name" ] || die "Pack needs a name. Example: mpc-crate pack dusty_drums"
+  shift || true
+  run_backend pack "$name" "$@"
+  public_pad_map "$name" || true
+}
+
+public_preview() {
+  local name="${1:-}"
+  local src
+  local list
+  local joined
+  local mp3
+  local count=0
+
+  [ -n "$name" ] || die "Preview needs a pack name. Example: mpc-crate preview dusty_drums"
+  name="$(resolve_pack_name "$name")"
+  require_pack "$name"
+  src="$PACKS/$name"
+  mkdir -p "$TMP" "$PREVIEWS"
+
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    die "Preview requires ffmpeg. Run: mpc-crate doctor"
+  fi
+
+  list="$TMP/preview-list-$(stamp).txt"
+  joined="$PREVIEWS/$(safe_name "$name")_preview.wav"
+  mp3="$PREVIEWS/$(safe_name "$name")_preview.mp3"
+  : > "$list"
+
+  echo "[+] Creating preview"
+  echo "[+] Source: $src"
+  echo "[+] Output: $mp3"
+
+  while IFS= read -r file; do
+    local short
+    short="$TMP/short_$(safe_name "$(basename "$file")")"
+    ffmpeg -nostdin -y -hide_banner -loglevel error -i "$file" -t 2 -ar 44100 -ac 2 -sample_fmt s16 "$short" || true
+    if [ -f "$short" ]; then
+      printf "file '%s'\n" "$short" >> "$list"
+      count=$((count + 1))
+    fi
+  done < <(find "$src" -type f -iname '*.wav' | sort | head -n 64)
+
+  [ "$count" -gt 0 ] || die "No previewable WAV files found in $src"
+  ffmpeg -nostdin -y -hide_banner -loglevel error -f concat -safe 0 -i "$list" -c copy "$joined"
+  ffmpeg -nostdin -y -hide_banner -loglevel error -i "$joined" -codec:a libmp3lame -q:a 2 "$mp3"
+
+  echo "[+] Preview saved: $mp3"
+}
+
+sync_sd() {
+  local dry_run=0
+  local log
+  local rsync_args=(-ah --modify-window=2 --no-owner --no-group --no-perms --omit-dir-times --info=stats2,progress2)
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --dry-run|-n)
+        dry_run=1
+        ;;
+      *)
+        die "Unknown sync-sd option: $1"
+        ;;
+    esac
+    shift
+  done
+
+  if ! command -v rsync >/dev/null 2>&1; then
+    echo "[!] SD sync skipped: rsync is not installed"
+    return 0
+  fi
+
+  if [ ! -d "$SD_SOURCE" ]; then
+    echo "[!] SD sync skipped: source not found: $SD_SOURCE"
+    return 0
+  fi
+
+  if ! sd_is_available; then
+    echo "[!] SD sync skipped: $SD_TARGET is not mounted and writable"
+    return 0
+  fi
+
+  mkdir -p "$LOGS"
+  log="$LOGS/rsync-sd-$(stamp).log"
+
+  if [ "$dry_run" -eq 1 ]; then
+    rsync_args+=(--dry-run)
+  fi
+
+  echo "[+] SD sync source: $SD_SOURCE/"
+  echo "[+] SD sync target: $SD_TARGET/"
+  echo "[+] SD sync log: $log"
+
+  rsync "${rsync_args[@]}" "$SD_SOURCE"/ "$SD_TARGET"/ | tee "$log"
+}
+
+public_export() {
+  local name="${1:-}"
+  [ -n "$name" ] || die "Export needs a pack name. Example: mpc-crate export dusty_drums"
+  name="$(resolve_pack_name "$name")"
+  require_pack "$name"
+  public_pad_map "$name" >/dev/null || true
+  run_backend export-mpc "$name"
+  sync_sd
+}
+
+prepare_sd() {
+  local name="${1:-}"
+  [ -n "$name" ] || die "prepare-sd needs a pack name. Example: mpc-crate prepare-sd dusty_drums"
+  name="$(resolve_pack_name "$name")"
+  require_pack "$name"
+
+  public_pad_map "$name" >/dev/null || true
+  run_backend export-mpc "$name"
+  run_backend manifest "$EXPORTS/${name}_MPC_EXPORT" || true
+  run_backend evidence-pack "$name" || true
+  sync_sd
+}
+
+import_audio() {
+  local src="${1:-}"
+  local dest="$RAW/import-$(stamp)"
+  local count=0
+
+  [ -n "$src" ] || die "Import needs a file or folder. Example: mpc-crate import ~/Downloads/drums"
+  src="$(expand_path "$src")"
+  [ -e "$src" ] || die "Import source not found: $src"
+
+  mkdir -p "$dest"
+
+  if [ -f "$src" ]; then
+    cp -n "$src" "$dest/"
+    count=1
+  else
+    while IFS= read -r -d '' file; do
+      cp -n "$file" "$dest/"
+      count=$((count + 1))
+    done < <(
+      find "$src" -type f \( \
+        -iname '*.wav' -o \
+        -iname '*.aif' -o \
+        -iname '*.aiff' -o \
+        -iname '*.flac' -o \
+        -iname '*.mp3' -o \
+        -iname '*.m4a' -o \
+        -iname '*.ogg' \
+      \) -print0
+    )
+  fi
+
+  echo "[+] Imported $count audio file(s)"
+  echo "[+] Destination: $dest"
+}
+
+process_new() {
+  echo "[+] Processing new audio"
+  run_backend convert
+  run_backend normalize
+  run_backend trim
+  run_backend bpm-dir || true
+  run_backend dedupe || true
+  catalog_scan
+}
+
+quick_pack() {
+  local positionals=()
+  local name
+  local kind
+  local count
+  local source=""
+  local source_filter=""
+  local bpm_range=""
+  local bpm_min=""
+  local bpm_max=""
+  local min_duration=""
+  local max_duration=""
+  local max_source=0
+  local no_clipped=0
+  local include_exports=0
+  local include_packs=0
+  local dry_run=0
+  local candidates
+  local shuffled
+  local pack
+  local copied=0
+  local skipped=0
+  local total_candidates=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --source)
+        shift
+        source="$(expand_path "${1:-}")"
+        ;;
+      --bpm)
+        shift
+        bpm_range="${1:-}"
+        ;;
+      --min-duration)
+        shift
+        min_duration="${1:-}"
+        ;;
+      --max-duration)
+        shift
+        max_duration="${1:-}"
+        ;;
+      --max-source)
+        shift
+        max_source="${1:-}"
+        [[ "$max_source" =~ ^[0-9]+$ ]] || die "--max-source needs a number"
+        ;;
+      --no-clipped)
+        no_clipped=1
+        ;;
+      --include-exports)
+        include_exports=1
+        ;;
+      --include-packs)
+        include_packs=1
+        ;;
+      --dry-run|-n)
+        dry_run=1
+        ;;
+      -*)
+        die "Unknown quick-pack option: $1"
+        ;;
+      *)
+        positionals+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  name="${positionals[0]:-}"
+  kind="${positionals[1]:-drums}"
+  count="${positionals[2]:-32}"
+
+  [ -n "$name" ] || die "quick-pack needs a name. Example: mpc-crate quick-pack dusty_drums drums 32"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "quick-pack count must be a number"
+  require_catalog
+
+  if [ -z "$max_duration" ]; then
+    case "$kind" in
+      drums|drum|percussion|perc|chops|chop)
+        max_duration="10"
+        ;;
+    esac
+  fi
+
+  if [ -n "$bpm_range" ]; then
+    case "$bpm_range" in
+      *-*)
+        bpm_min="${bpm_range%-*}"
+        bpm_max="${bpm_range#*-}"
+        ;;
+      *)
+        [[ "$bpm_range" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--bpm needs a number or range like 85-96"
+        bpm_min="$(awk -v b="$bpm_range" 'BEGIN {printf "%.2f", b - 2}')"
+        bpm_max="$(awk -v b="$bpm_range" 'BEGIN {printf "%.2f", b + 2}')"
+        ;;
+    esac
+  fi
+
+  if [ -n "$source" ]; then
+    [ -d "$source" ] || die "quick-pack source folder not found: $source"
+    source_filter="$(relative_path "$source")"
+  fi
+
+  mkdir -p "$TMP"
+  candidates="$TMP/quick-pack-candidates-$(stamp).tsv"
+  shuffled="$TMP/quick-pack-shuffled-$(stamp).tsv"
+
+  awk -F '\t' \
+    -v q="$(printf '%s' "$kind" | tr '[:upper:]' '[:lower:]')" \
+    -v source="$source_filter" \
+    -v bmin="$bpm_min" \
+    -v bmax="$bpm_max" \
+    -v mindur="$min_duration" \
+    -v maxdur="$max_duration" \
+    -v include_exports="$include_exports" \
+    -v include_packs="$include_packs" \
+    -v no_clipped="$no_clipped" '
+      NR == 1 {next}
+      {
+        path=$1
+        text=tolower($1 " " $2 " " $4)
+        dur=($5 == "" ? -1 : $5 + 0)
+        bpm=($8 == "" ? -1 : $8 + 0)
+
+        if (!include_exports && (path ~ /^exports\// || path ~ /^previews\// || path ~ /^tmp\//)) next
+        if (source == "" && !include_packs && path ~ /^packs\//) next
+        if (no_clipped && path ~ /^bad_audio_review\//) next
+        if (source != "" && index(path, source) != 1) next
+        if (q != "" && q != "any" && index(text, q) == 0) next
+        if (mindur != "" && (dur < 0 || dur < mindur + 0)) next
+        if (maxdur != "" && (dur < 0 || dur > maxdur + 0)) next
+        if (bmin != "" && (bpm < 0 || bpm < bmin + 0 || bpm > bmax + 0)) next
+
+        print path "\t" $4 "\t" $5 "\t" $8
+      }
+    ' "$CATALOG_FILE" > "$candidates"
+
+  total_candidates="$(wc -l < "$candidates" | awk '{print $1}')"
+  if [ "$total_candidates" -eq 0 ]; then
+    if [ -n "$bpm_range" ]; then
+      die "No catalog samples matched quick-pack filters. Run mpc-crate bpm-missing first, or loosen --bpm."
+    fi
+    die "No catalog samples matched quick-pack filters"
+  fi
+
+  if command -v shuf >/dev/null 2>&1; then
+    shuf "$candidates" > "$shuffled"
+  else
+    sort "$candidates" > "$shuffled"
+  fi
+
+  pack="$PACKS/$(safe_name "$name")"
+
+  echo "[+] Smart quick-pack"
+  echo "[+] Name: $name"
+  echo "[+] Kind: $kind"
+  echo "[+] Count: $count"
+  echo "[+] Candidates: $total_candidates"
+  [ -n "$bpm_range" ] && echo "[+] BPM: $bpm_range"
+  [ -n "$min_duration" ] && echo "[+] Minimum duration: $min_duration"
+  [ -n "$max_duration" ] && echo "[+] Maximum duration: $max_duration"
+  [ "$max_source" -gt 0 ] && echo "[+] Max per source: $max_source"
+  [ "$no_clipped" -eq 1 ] && echo "[+] Excluding clipped review files"
+  [ "$dry_run" -eq 1 ] && echo "[+] Dry run: pack will not be written"
+
+  if [ "$dry_run" -eq 1 ]; then
+    declare -A dry_source_counts=()
+    while IFS=$'\t' read -r path bucket duration bpm; do
+      local file
+      local group
+      local base
+
+      [ "$copied" -lt "$count" ] || break
+      file="$(catalog_path_to_file "$path")"
+      [ -f "$file" ] || {
+        skipped=$((skipped + 1))
+        continue
+      }
+
+      base="$(basename "$file")"
+      if [ "$no_clipped" -eq 1 ] && { [ -f "$ROOT/bad_audio_review/clipped/$base" ] || [[ "$path" == bad_audio_review/* ]]; }; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      case "$path" in
+        slices/*/*) group="$(dirname "$path")" ;;
+        *) group="${base%.*}" ;;
+      esac
+
+      if [ "$max_source" -gt 0 ] && [ "${dry_source_counts[$group]:-0}" -ge "$max_source" ]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      dry_source_counts[$group]=$(( ${dry_source_counts[$group]:-0} + 1 ))
+      copied=$((copied + 1))
+      printf "  %-12s dur=%-8s bpm=%-8s %s\n" "$bucket" "$duration" "${bpm:-"-"}" "$path"
+    done < "$shuffled"
+
+    echo "[+] Dry-run files selected: $copied"
+    if [ "$copied" -lt "$count" ]; then
+      echo "[!] Dry run underfilled. Loosen --max-source, --max-duration, --bpm, or run mpc-crate scan after adding more material."
+    fi
+    rm -f "$candidates" "$shuffled"
+    return 0
+  fi
+
+  mkdir -p "$pack"/{drums,percussion,bass,keys,guitar,synth,vocal,fx,chops,loops,unsorted}
+  declare -A source_counts=()
+
+  while IFS=$'\t' read -r path bucket duration bpm; do
+    local file
+    local group
+    local dest
+    local base
+
+    [ "$copied" -lt "$count" ] || break
+    file="$(catalog_path_to_file "$path")"
+    [ -f "$file" ] || {
+      skipped=$((skipped + 1))
+      continue
+    }
+
+    base="$(basename "$file")"
+    if [ "$no_clipped" -eq 1 ] && { [ -f "$ROOT/bad_audio_review/clipped/$base" ] || [[ "$path" == bad_audio_review/* ]]; }; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    case "$path" in
+      slices/*/*) group="$(dirname "$path")" ;;
+      *) group="${base%.*}" ;;
+    esac
+
+    if [ "$max_source" -gt 0 ] && [ "${source_counts[$group]:-0}" -ge "$max_source" ]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    dest="$(copy_sample_to_pack "$file" "$pack")"
+    source_counts[$group]=$(( ${source_counts[$group]:-0} + 1 ))
+    copied=$((copied + 1))
+    printf '[+] %02d %-12s %s\n' "$copied" "$(basename "$(dirname "$dest")")" "$(basename "$dest")"
+  done < "$shuffled"
+
+  {
+    echo "MPC Quick Pack"
+    echo "Created: $(date)"
+    echo "Name: $name"
+    echo "Kind: $kind"
+    echo "Requested count: $count"
+    echo "Copied count: $copied"
+    echo "Skipped count: $skipped"
+    echo "Candidate count: $total_candidates"
+    echo "BPM range: ${bpm_range:-any}"
+    echo "Min duration: ${min_duration:-any}"
+    echo "Max duration: ${max_duration:-any}"
+    echo "Max per source: ${max_source:-none}"
+    echo "No clipped: $no_clipped"
+  } > "$pack/PACK_INFO.txt"
+
+  public_pad_map "$pack" >/dev/null || true
+  public_preview "$pack" || true
+  rm -f "$candidates" "$shuffled"
+
+  echo "[+] Smart pack created: $pack"
+  echo "[+] Files copied: $copied"
+  if [ "$copied" -lt "$count" ]; then
+    echo "[!] Pack underfilled. Loosen --max-source, --max-duration, --bpm, or run mpc-crate scan after adding more material."
+  fi
+}
+
+today() {
+  status_summary
+  echo
+  echo "Latest reports:"
+  find "$REPORTS" -maxdepth 1 -type f -printf '  %TY-%Tm-%Td %TH:%TM  %f\n' 2>/dev/null \
+    | sort -r \
+    | head -n 8
+  echo
+  echo "Latest packs:"
+  find "$PACKS" -mindepth 1 -maxdepth 1 -type d -printf '  %TY-%Tm-%Td %TH:%TM  %f\n' 2>/dev/null \
+    | sort -r \
+    | head -n 8
+}
+
+open_target() {
+  local name="${1:-root}"
+  local target
+
+  case "$name" in
+    root|home|project) target="$ROOT" ;;
+    raw) target="$RAW" ;;
+    wav) target="$WAV" ;;
+    slices|chops) target="$SLICES" ;;
+    packs) target="$PACKS" ;;
+    exports|export) target="$EXPORTS" ;;
+    reports) target="$REPORTS" ;;
+    catalog) target="$CATALOG_DIR" ;;
+    sd) target="$SD_TARGET" ;;
+    *) target="$(expand_path "$name")" ;;
+  esac
+
+  [ -e "$target" ] || die "Folder not found: $target"
+  echo "$target"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$target" >/dev/null 2>&1 || true
+  fi
+}
+
+choose_item() {
+  require_catalog
+
+  if command -v fzf >/dev/null 2>&1; then
+    local choice
+    choice="$(awk -F '\t' 'NR > 1 {print $1}' "$CATALOG_FILE" | fzf --prompt='MPC sample> ')" || return 0
+    [ -n "$choice" ] || return 0
+    echo "$choice"
+    echo
+    echo "Actions:"
+    echo "  1) Preview"
+    echo "  2) Slice"
+    echo "  3) Show path"
+    echo "  0) Exit"
+    read -r -p "Choose: " action
+    case "$action" in
+      1)
+        if command -v mpv >/dev/null 2>&1; then
+          mpv "$ROOT/$choice"
+        elif command -v ffplay >/dev/null 2>&1; then
+          ffplay -autoexit -nodisp "$ROOT/$choice"
+        else
+          echo "No preview player found. Path: $ROOT/$choice"
+        fi
+        ;;
+      2)
+        public_slice "$ROOT/$choice"
+        ;;
+      3)
+        echo "$ROOT/$choice"
+        ;;
+    esac
+  else
+    echo "fzf is not installed. Showing the first 20 catalog items instead."
+    awk -F '\t' 'NR > 1 {print "  " $1}' "$CATALOG_FILE" | head -n 20
+  fi
+}
+
+play_audio_file() {
+  local file="$1"
+  local player=""
+
+  for candidate in mpv ffplay play aplay; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      player="$candidate"
+      break
+    fi
+  done
+
+  [ -n "$player" ] || die "No audio player found. Install mpv, ffplay, sox play, or aplay."
+
+  case "$player" in
+    mpv) mpv --really-quiet "$file" ;;
+    ffplay) ffplay -nodisp -autoexit -loglevel quiet "$file" ;;
+    play) play "$file" ;;
+    aplay) aplay "$file" ;;
+  esac
+}
+
+catalog_browser() {
+  local query="${1:-}"
+  local table
+  local choice
+  local path
+  local file
+  local action
+  local pack_name
+  local pack_dir
+
+  require_catalog
+
+  if ! command -v fzf >/dev/null 2>&1; then
+    echo "fzf is not installed; falling back to catalog search."
+    catalog_search "${query:-drums}"
+    return 0
+  fi
+
+  mkdir -p "$TMP"
+  table="$TMP/catalog-browser-$(stamp).tsv"
+
+  awk -F '\t' -v q="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')" '
+    NR == 1 {next}
+    {
+      text=tolower($1 " " $2 " " $4 " " $8)
+      if (q != "" && index(text, q) == 0) next
+      printf "%s\t%-11s dur=%-8s bpm=%-8s %s\n", $1, $4, ($5 == "" ? "-" : $5), ($8 == "" ? "-" : $8), $1
+    }
+  ' "$CATALOG_FILE" > "$table"
+
+  [ -s "$table" ] || die "No catalog rows matched: ${query:-all}"
+
+  choice="$(fzf --prompt='MPC sample> ' --delimiter=$'\t' --with-nth=2.. < "$table")" || {
+    rm -f "$table"
+    return 0
+  }
+  rm -f "$table"
+
+  path="${choice%%$'\t'*}"
+  file="$(catalog_path_to_file "$path")"
+  [ -f "$file" ] || die "Catalog file is missing: $path"
+
+  echo
+  echo "$path"
+  echo
+  echo "Actions:"
+  echo "  1) Preview"
+  echo "  2) Detect BPM"
+  echo "  3) Guarded reslice"
+  echo "  4) Add to pack"
+  echo "  5) Show full path"
+  echo "  0) Exit"
+  read -r -p "Choose: " action
+
+  case "$action" in
+    1)
+      play_audio_file "$file"
+      ;;
+    2)
+      public_bpm "$file"
+      ;;
+    3)
+      read -r -p "Preset [drums]: " preset
+      guarded_slice "$file" --preset "${preset:-drums}"
+      ;;
+    4)
+      read -r -p "Pack name [browser_picks]: " pack_name
+      pack_name="${pack_name:-browser_picks}"
+      pack_dir="$PACKS/$(safe_name "$pack_name")"
+      mkdir -p "$pack_dir"/{drums,percussion,bass,keys,guitar,synth,vocal,fx,chops,loops,unsorted}
+      copy_sample_to_pack "$file" "$pack_dir" >/dev/null
+      public_pad_map "$pack_dir" >/dev/null || true
+      echo "[+] Added to: $pack_dir"
+      ;;
+    5)
+      echo "$file"
+      ;;
+    0|"")
+      return 0
+      ;;
+    *)
+      die "Unknown browser action: $action"
+      ;;
+  esac
+}
+
+prompt_default() {
+  local prompt="$1"
+  local default="$2"
+  local answer
+  read -r -p "$prompt [$default]: " answer
+  printf '%s\n' "${answer:-$default}"
+}
+
+confirm_default_yes() {
+  local prompt="$1"
+  local answer
+  read -r -p "$prompt [Y/n]: " answer
+  case "$answer" in
+    n|N|no|NO|No) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+confirm_default_no() {
+  local prompt="$1"
+  local answer
+  read -r -p "$prompt [y/N]: " answer
+  case "$answer" in
+    y|Y|yes|YES|Yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+workflow_new_pack() {
+  local pack_name
+  local source_folder
+  local max_len
+  local do_normalize=0
+  local do_trim=0
+  local do_bpm=0
+  local do_slice=0
+  local do_export=0
+  local selected=0
+  local estimated
+
+  echo "New Pack Wizard"
+  echo
+  pack_name="$(prompt_default "Pack name" "dusty_drums")"
+  source_folder="$(prompt_default "Source folder" "$RAW")"
+  source_folder="$(expand_path "$source_folder")"
+  confirm_default_yes "Normalize audio?" && do_normalize=1
+  confirm_default_yes "Trim silence?" && do_trim=1
+  confirm_default_yes "Detect BPM?" && do_bpm=1
+  confirm_default_yes "Slice loops?" && do_slice=1
+  max_len="$(prompt_default "Maximum sample length" "600")"
+  confirm_default_no "Export to MPC SD card afterward?" && do_export=1
+
+  selected="$(count_audio_files "$source_folder")"
+  estimated="$(du -sh "$source_folder" 2>/dev/null | awk '{print $1}')"
+
+  echo
+  echo "Summary:"
+  echo "  $selected files selected"
+  echo "  Estimated output: ${estimated:-unknown}"
+  echo "  Destination: packs/$pack_name"
+  echo "  Maximum sample length: $max_len seconds"
+  echo
+
+  confirm_default_yes "Proceed?" || return 0
+
+  [ -d "$source_folder" ] || die "Source folder not found: $source_folder"
+  [ "$do_normalize" -eq 1 ] && run_backend normalize
+  [ "$do_trim" -eq 1 ] && run_backend trim
+  [ "$do_bpm" -eq 1 ] && run_backend bpm-dir || true
+  [ "$do_slice" -eq 1 ] && run_backend slice-dir
+  run_backend pack "$pack_name" "$source_folder"
+  [ "$do_export" -eq 1 ] && prepare_sd "$pack_name"
+}
+
+workflow_drum_kit() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    name="$(prompt_default "Drum kit name" "my_drum_kit")"
+  fi
+  run_backend build-drum-kit "$name"
+}
+
+workflow_loop_pack() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    name="$(prompt_default "Loop pack name" "my_loops")"
+  fi
+  run_backend build-loop-pack "$name"
+}
+
+workflow_sd_export() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    name="$(prompt_default "Pack name" "$(latest_pack)")"
+  fi
+  prepare_sd "$name"
+}
+
+workflow_dispatch() {
+  local workflow="${1:-}"
+  [ "$#" -gt 0 ] && shift || true
+
+  case "$workflow" in
+    new-pack) workflow_new_pack "$@" ;;
+    drum-kit) workflow_drum_kit "$@" ;;
+    loop-pack) workflow_loop_pack "$@" ;;
+    sd-export) workflow_sd_export "$@" ;;
+    ""|-h|--help) help_topic workflow ;;
+    *) die "Unknown workflow: $workflow" ;;
+  esac
+}
+
+menu_pause() {
+  echo
+  read -r -p "Press Enter to continue..." _
+}
+
+menu() {
+  if [ ! -t 0 ]; then
+    status_summary
+    echo
+    short_help
+    return 0
+  fi
+
+  while true; do
+    clear 2>/dev/null || true
+    cat <<'TXT'
+╔══════════════════════════════════════╗
+║        MPC Sample Hunter             ║
+╚══════════════════════════════════════╝
+TXT
+    echo
+    status_summary
+    echo
+    cat <<'TXT'
+What would you like to do?
+
+  1) Browse samples
+  2) Audition samples
+  3) Import a file or folder
+  4) Clean and convert audio
+  5) Detect missing BPM and organize
+  6) Slice samples
+  7) Build an MPC pack
+  8) Export to MPC SD card
+  9) Search my catalog
+ 10) Open folders
+ 11) Maintenance and diagnostics
+  0) Exit
+TXT
+    echo
+    read -r -p "Choose: " choice
+
+    case "$choice" in
+      1)
+        read -r -p "Browser query [drums]: " query
+        catalog_browser "${query:-drums}"
+        menu_pause
+        ;;
+      9)
+        read -r -p "Search query [drums]: " query
+        catalog_search "${query:-drums}"
+        menu_pause
+        ;;
+      2)
+        public_audition
+        menu_pause
+        ;;
+      3)
+        read -r -p "File or folder to import: " path
+        import_audio "$path"
+        menu_pause
+        ;;
+      4)
+        run_backend convert
+        public_clean
+        menu_pause
+        ;;
+      5)
+        bpm_missing --limit 50 || true
+        run_backend auto-organize
+        menu_pause
+        ;;
+      6)
+        read -r -p "File to slice, or blank for slice-dir: " file
+        if [ -n "$file" ]; then
+          public_slice "$file"
+        else
+          public_slice
+        fi
+        menu_pause
+        ;;
+      7)
+        workflow_new_pack
+        menu_pause
+        ;;
+      8)
+        read -r -p "Pack name [$(latest_pack)]: " pack
+        prepare_sd "${pack:-$(latest_pack)}"
+        menu_pause
+        ;;
+      10)
+        read -r -p "Folder [packs]: " folder
+        open_target "${folder:-packs}"
+        menu_pause
+        ;;
+      11)
+        run_backend doctor
+        menu_pause
+        ;;
+      0)
+        return 0
+        ;;
+    esac
+  done
+}
+
+print_completion() {
+  cat <<'TXT'
+_mpc_crate_complete() {
+  local cur prev commands folders workflows packs
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  commands="menu status today find search scan stats import process process-new convert clean bpm bpm-missing organize audition play slice chop reslice pack kit quick-pack pad-map preview export prepare-sd sync-sd open workflow browse browser choose doctor config commands help legal backend"
+  folders="root raw wav slices packs exports reports catalog sd"
+  workflows="new-pack drum-kit loop-pack sd-export"
+  packs="$(find "$HOME/Music/MPC_Sample_Hunter/packs" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)"
+
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return 0
+  fi
+
+  case "$prev" in
+    open)
+      COMPREPLY=( $(compgen -W "$folders" -- "$cur") )
+      ;;
+    workflow)
+      COMPREPLY=( $(compgen -W "$workflows" -- "$cur") )
+      ;;
+    preview|export|prepare-sd|pack|kit|pad-map)
+      COMPREPLY=( $(compgen -W "$packs" -- "$cur") )
+      ;;
+    help)
+      COMPREPLY=( $(compgen -W "$commands slice chop pack export workflow open scan find search" -- "$cur") )
+      ;;
+    *)
+      COMPREPLY=()
+      ;;
+  esac
+}
+complete -F _mpc_crate_complete mpc-crate
+TXT
+}
+
+config_show() {
+  cat <<TXT
+MPC Crate Config
+
+Root:        $ROOT
+Raw:         $RAW
+WAV:         $WAV
+Slices:      $SLICES
+Packs:       $PACKS
+Exports:     $EXPORTS
+Catalog:     $CATALOG_FILE
+Backend:     $MPC_SAMPLE_HUNTER_BIN
+SD target:   $SD_TARGET
+SD source:   $SD_SOURCE
+SD mounted:  $(sd_status)
+TXT
+}
+
+unknown_command() {
+  local cmd="$1"
+  echo "Unknown command: $cmd"
+  echo
+  echo "Try one of:"
+  echo "  mpc-crate"
+  echo "  mpc-crate help"
+  echo "  mpc-crate commands"
+  echo "  mpc-crate find drums"
+  echo "  mpc-crate workflow new-pack"
+  exit 1
+}
+
+cmd="${1:-menu}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$cmd" in
+  menu)
+    menu "$@"
+    ;;
+  help|-h|--help)
+    if [ "$#" -eq 0 ]; then
+      short_help
+    else
+      help_topic "$1"
+    fi
+    ;;
+  commands)
+    commands_help
+    ;;
+  status|crate-status)
+    status_summary
+    ;;
+  today)
+    today
+    ;;
+  scan|catalog-scan)
+    catalog_scan "$@"
+    ;;
+  stats|catalog-stats)
+    catalog_stats
+    ;;
+  find|search|catalog-search)
+    catalog_search "$@"
+    ;;
+  browse|browser)
+    catalog_browser "$@"
+    ;;
+  choose)
+    choose_item
+    ;;
+  import|add)
+    import_audio "$@"
+    ;;
+  process|process-new)
+    process_new
+    ;;
+  convert)
+    run_backend convert "$@"
+    ;;
+  clean)
+    public_clean "$@"
+    ;;
+  normalize|trim)
+    run_backend "$cmd" "$@"
+    ;;
+  bpm)
+    public_bpm "$@"
+    ;;
+  bpm-missing|fill-bpm)
+    bpm_missing "$@"
+    ;;
+  organize|auto-organize)
+    run_backend auto-organize "$@"
+    ;;
+  audition|play)
+    public_audition "$@"
+    ;;
+  slice|chop)
+    public_slice "$@"
+    ;;
+  reslice|guarded-slice)
+    guarded_slice "$@"
+    ;;
+  pack)
+    public_pack "$@"
+    ;;
+  kit)
+    name="${1:-my_drum_kit}"
+    run_backend build-drum-kit "$name"
+    public_pad_map "$name" >/dev/null || true
+    ;;
+  quick-pack)
+    quick_pack "$@"
+    ;;
+  pad-map)
+    public_pad_map "$@"
+    ;;
+  preview)
+    public_preview "$@"
+    ;;
+  export|export-mpc)
+  public_export "$@"
+    ;;
+  flatten-pack|zip-pack)
+    run_backend "$cmd" "$@"
+    sync_sd
+    ;;
+  prepare-sd)
+    prepare_sd "$@"
+    ;;
+  sync-sd|sd-sync|rsync-sd)
+    sync_sd "$@"
+    ;;
+  workflow)
+    workflow_dispatch "$@"
+    ;;
+  open|folders)
+    open_target "$@"
+    ;;
+  doctor)
+    run_backend doctor "$@"
+    ;;
+  legal)
+    run_backend legal "$@"
+    ;;
+  config)
+    config_show
+    ;;
+  completion|completions)
+    print_completion
+    ;;
+  backend)
+    [ "$#" -gt 0 ] || die "backend needs a backend command"
+    run_backend "$@"
+    ;;
+  *)
+    unknown_command "$cmd"
+    ;;
+esac

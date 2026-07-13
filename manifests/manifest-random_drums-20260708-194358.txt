@@ -1,0 +1,6 @@
+MPC Sample Hunter Manifest
+Created: Wed Jul  8 19:43:58 EDT 2026
+Target: /home/jeremy/Music/MPC_Sample_Hunter/packs/random_drums
+
+53dccba66babc98481279db556ab028ac3e43bdc5f5fe06ec5ad591be7b252d0  /home/jeremy/Music/MPC_Sample_Hunter/packs/random_drums/PAD_MAP.txt
+33ccb0307d68aa6d3cda78e7adeb70051ed893efbc83733cda1b4d6cc4cac4d4  /home/jeremy/Music/MPC_Sample_Hunter/packs/random_drums/random/drums_no_copyright_music_drum_breaks_collection_.wav

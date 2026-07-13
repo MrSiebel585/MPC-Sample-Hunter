@@ -1,0 +1,5 @@
+MPC Audio Quality Check
+Created: Wed Jul  8 19:49:17 EDT 2026
+Source: /home/jeremy/Music/MPC_Sample_Hunter/wav
+
+possibly_clipped   dur=  143.93 rms=0.139142 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_no_copyright_music_drum_breaks_collection_q68zfjua_is.wav

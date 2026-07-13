@@ -1,0 +1,10 @@
+MPC Audio Quality Check
+Created: Fri Jul 10 09:32:52 EDT 2026
+Source: /home/jeremy/Music/MPC_Sample_Hunter/wav
+
+possibly_clipped   dur=  156.18 rms=0.094859 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_170_free_drum_kit_-_doomsday_free_drum_kit_download_2026_7nrkragyuus.wav
+possibly_clipped   dur=  131.22 rms=0.267954 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_500_royalty_free_kick_drum_samples_loops_free_edm_samples_pack_vol._6_nagstyh_e_0.wav
+possibly_clipped   dur=   73.61 rms=0.359612 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_789_free_edm_trap_drum_samples_loops_free_drums_mega_pack_il0_dpyt9wi.wav
+ok                 dur=  826.13 rms=0.068500 max=0.578949 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_free_exotic_edm_drum_kit_loops_midis_vocal_loops_free_drum_kit_2026_ote2vaqg7x8.wav
+ok                 dur=  284.33 rms=0.156726 max=0.945892 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_high_quality_free_edm_drum_samples_by_wave_alchemy_8odqe8wpaoa.wav
+possibly_clipped   dur=  143.93 rms=0.139142 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_no_copyright_music_drum_breaks_collection_q68zfjua_is.wav

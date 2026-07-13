@@ -1,0 +1,17 @@
+MPC Sample Hunter Crate
+
+Name: psychedelic_rock
+Query: royalty free psychedelic rock loops
+Tag: psychedelic_rock
+Updated: 2026-07-11T15:25:02-04:00
+
+Files:
+  /home/jeremy/Music/MPC_Sample_Hunter/crates/psychedelic_rock/results.txt
+  /home/jeremy/Music/MPC_Sample_Hunter/crates/psychedelic_rock/urls.txt
+  /home/jeremy/Music/MPC_Sample_Hunter/crates/psychedelic_rock/selected.txt
+
+Commands:
+  mpc-genre-crates show psychedelic_rock
+  mpc-genre-crates select psychedelic_rock 1 3 5-8
+  mpc-genre-crates download-top psychedelic_rock
+  mpc-genre-crates download-selected psychedelic_rock

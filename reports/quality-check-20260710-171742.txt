@@ -1,0 +1,37 @@
+MPC Audio Quality Check
+Created: Fri Jul 10 17:17:43 EDT 2026
+Source: /home/jeremy/Music/MPC_Sample_Hunter/wav
+
+possibly_clipped   dur=   48.40 rms=0.391142 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/bass_15_free_808_bass_sounds_pack_royalty_free_samples_0kjms-hsb1e.wav
+possibly_clipped   dur=  156.18 rms=0.094859 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_170_free_drum_kit_-_doomsday_free_drum_kit_download_2026_7nrkragyuus.wav
+possibly_clipped   dur=  131.22 rms=0.267954 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_500_royalty_free_kick_drum_samples_loops_free_edm_samples_pack_vol._6_nagstyh_e_0.wav
+possibly_clipped   dur=   73.61 rms=0.359612 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_789_free_edm_trap_drum_samples_loops_free_drums_mega_pack_il0_dpyt9wi.wav
+possibly_clipped   dur=  557.23 rms=0.079169 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_7_best_free_drum_vsts_in_2026_xexgupoqxje.wav
+ok                 dur=  645.82 rms=0.104742 max=0.766174 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_every_producer_needs_this_free_sauce_vsts_sounds_drum_kits_sites_ija_a1b14jk.wav
+possibly_clipped   dur=  204.88 rms=0.145119 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_free_drum_kit_2023_free_hq_download_edm_deep_house_chillstep_future_bass_etc_xsyn-3ze0ng.wav
+ok                 dur=  194.42 rms=0.042584 max=0.514679 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_free_drum_n_bass_drum_kit_2026_free_drum_kit_download_gnwf6any0-8.wav
+ok                 dur=  826.13 rms=0.068500 max=0.578949 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_free_exotic_edm_drum_kit_loops_midis_vocal_loops_free_drum_kit_2026_ote2vaqg7x8.wav
+ok                 dur=  454.01 rms=0.074567 max=0.829956 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_free_royalty_free_drum_breaks_percussion_loops_raw_rhythms_boom_bap_hip_hop_old_school_lofi_amvyznkhasg.wav
+ok                 dur=  284.33 rms=0.156726 max=0.945892 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_high_quality_free_edm_drum_samples_by_wave_alchemy_8odqe8wpaoa.wav
+possibly_clipped   dur=  275.06 rms=0.158926 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_high_quality_free_edm_drum_samples_by_wave_alchemy_pv_skfz2w5i.wav
+possibly_clipped   dur=  143.93 rms=0.139142 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_no_copyright_music_drum_breaks_collection_q68zfjua_is.wav
+ok                 dur=   36.35 rms=0.032569 max=0.468231 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_real_drum_samples_-_free_real_drums_soundpacks_0jpr2urfuww.wav
+ok                 dur=   38.65 rms=0.133633 max=0.921265 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_royalty-free_edm_drum_fills_-_sample_pack_high_quality_qfbjbpcgl4a.wav
+ok                 dur=   15.38 rms=0.196934 max=0.756256 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_royalty_free_dancehall_drum_kit_2025_-_jango_m0e23lx6ixq.wav
+possibly_clipped   dur=  496.01 rms=0.121433 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_the_best_free_drum_kits_every_producer_needs_in_2021_for_any_genre_qjuvwegowai.wav
+possibly_clipped   dur=  886.07 rms=0.104242 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/drums_where_to_find_free_drum_kits_samples_all_the_drum_sounds_you_need_and_how_to_use_them_like_a_pro_bg6ekvlww1g.wav
+possibly_clipped   dur=  495.98 rms=0.098357 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/samples_why_do_i_keep_having_copyright_issues_with_royalty_free_samples_7abzskksyzm.wav
+ok                 dur=   46.06 rms=0.146807 max=0.569458 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_background_loop_melodic_techno_-_no_copyright_music_9ympagtltui.wav
+possibly_clipped   dur=   90.00 rms=0.359252 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_catalyst_samples_enlightened_melodic_techno_sample_pack_cgkxmkpeu1c.wav
+possibly_clipped   dur=   90.00 rms=0.359252 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_catalyst_samples_enlightened_melodic_techno_sample_pack_unrb9bgnjog.wav
+possibly_clipped   dur=   59.92 rms=0.192794 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_dance_trance_techno_synth_loops_wavrex2_o8peznfj9_e.wav
+ok                 dur=   33.44 rms=0.271889 max=0.952179 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_deep_melodic_techno_mega_bundle_huge_collection_of_samples_for_melodic_house_techno_ule0nt1jflc.wav
+possibly_clipped   dur=  302.72 rms=0.221927 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_free_melodic_techno_sample_pack_2025_inspired_by_argy_anyma_artbat_9nguxendqee.wav
+possibly_clipped   dur=  430.79 rms=0.217923 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_from_bass_to_lead_-_melodic_techno_diva_presets_free_midi_fl_studio_project_boop8fjyje8.wav
+possibly_clipped   dur=  123.26 rms=0.317831 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_melodic_house_techno_vol.2_samples_vhpiog5ckkk.wav
+ok                 dur=   10.65 rms=0.125289 max=0.730774 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_melodic_techno_synth_loop_116_kyxiubbh3kw.wav
+possibly_clipped   dur=  261.84 rms=0.318096 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_techno_noir_royalty_free_dark_room_techno_loops_d9pbidnq4ic.wav
+possibly_clipped   dur=  188.26 rms=0.390844 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_techno_synth_samples_-_royalty-free_techno_synth_one-shots_loops_midi_files_d8wms987dzw.wav
+possibly_clipped   dur=  191.84 rms=0.303473 max=0.999969 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/synths_techno_synths_2_sample_pack_-_royalty-free_synth_loops_midi_files_qgkjeffuip0.wav
+ok                 dur=    2.17 rms=0.043995 max=0.664124 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/textures_free_sound_effects_-_analog_tape_noise_1_iv48t8cngim.wav
+ok                 dur=  202.57 rms=0.004782 max=0.537750 file=/home/jeremy/Music/MPC_Sample_Hunter/wav/textures_vinyl_crackling_sound_effect_free_download_lqkylpgnjey.wav

@@ -1,0 +1,11 @@
+MPC Pad Map
+Created: Wed Jul  8 19:49:25 EDT 2026
+Pack: /home/jeremy/Music/MPC_Sample_Hunter/packs/my_drum_kit
+
+Bank A - Drums
+
+Bank B - Percussion / Bass
+
+Bank C - Melodic
+
+Bank D - Chops / Vocals / FX

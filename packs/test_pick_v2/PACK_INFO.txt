@@ -1,0 +1,13 @@
+MPC Quick Pack
+Created: Mon Jul 13 13:35:58 EDT 2026
+Name: test_pick_v2
+Kind: drums
+Requested count: 16
+Copied count: 16
+Skipped count: 0
+Candidate count: 60
+BPM range: any
+Min duration: any
+Max duration: 10
+Max per source: 16
+No clipped: 1

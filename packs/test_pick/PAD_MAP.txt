@@ -1,0 +1,31 @@
+MPC Pad Map
+Created: Mon Jul 13 13:33:15 EDT 2026
+Pack: /home/jeremy/Music/MPC_Sample_Hunter/packs/test_pick
+
+Bank A - Drums
+A01 - drums_no_copyright_music_drum_breaks_collection.wav   143.93s
+      drums/drums_no_copyright_music_drum_breaks_collection.wav
+A02 - drums_no_copyright_music_drum_breaks_collection_02.wav  143.93s
+      drums/drums_no_copyright_music_drum_breaks_collection_.wav
+A03 - drums_no_copyright_music_drum_breaks_collection_.wav  143.82s
+      drums/drums_no_copyright_music_drum_breaks_collection__02.wav
+A04 - slice_03n031.wav                                        3.78s
+      drums/slice_03n031.wav
+A05 - slice_03n038.wav                                        0.73s
+      drums/slice_03n038.wav
+A06 - slice_03n043.wav                                        0.35s
+      drums/slice_03n043.wav
+A07 - slice_03n046.wav                                        0.20s
+      drums/slice_03n046.wav
+
+Bank B - Percussion / Bass
+
+Bank C - Melodic / Loops
+
+Bank D - Chops / Vocals / FX / Other
+
+Overflow
+
+MPC Filename Suggestions
+  drums/drums_no_copyright_music_drum_breaks_collection_.wav -> drums_no_copyright_music_drum_breaks_collection_02.wav
+  drums/drums_no_copyright_music_drum_breaks_collection__02.wav -> drums_no_copyright_music_drum_breaks_collection_.wav

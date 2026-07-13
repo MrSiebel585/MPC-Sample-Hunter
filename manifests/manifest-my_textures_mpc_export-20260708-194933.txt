@@ -1,0 +1,6 @@
+MPC Sample Hunter Manifest
+Created: Wed Jul  8 19:49:33 EDT 2026
+Target: /home/jeremy/Music/MPC_Sample_Hunter/exports/my_textures_MPC_EXPORT
+
+a251eb6a71ee7ecda62df757f01aaf7ce165cc82f11b69136fba7561f6111a2c  /home/jeremy/Music/MPC_Sample_Hunter/exports/my_textures_MPC_EXPORT/README.txt
+33ccb0307d68aa6d3cda78e7adeb70051ed893efbc83733cda1b4d6cc4cac4d4  /home/jeremy/Music/MPC_Sample_Hunter/exports/my_textures_MPC_EXPORT/Slices/drums_no_copyright_music_drum_breaks_collection_q68zfjua_is.wav
